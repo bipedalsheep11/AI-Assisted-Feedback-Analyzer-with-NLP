@@ -294,25 +294,25 @@ def analyze_sentiment(
       cluster_summary (sentiment % per cluster)
     """
     all_results = []
-    #repeat for all clusters
+    # repeat for all clusters
     for cluster_id in range(best_k):
         # Split the text into a list of lines, ignoring any trailing empty lines
         lines = generate_formatted_responses(labeled_df, cluster_id, likert_cols, text_cols)[1].strip().split('\n')
-    
-        # If there's no data, return an empty template
-        if not lines or len(lines) < 2:
-            return {"total_classified": 0, "results": [], "cluster_summary": {}}
-    
-        # The first line is the header
-        header = lines[0]
+        
+        # If there's no data (need at least title, divider, header, and 1 row = 4 lines)
+        if not lines or len(lines) < 4:
+            continue # Skip to the next cluster instead of returning out of the whole function
+            
+        # The actual CSV header is at index 2
+        header = lines[2]
         
         # List to hold our new segmented strings
         segments = []
-        for line in lines[1:]:
+        
+        # The actual data rows start at index 3
+        for line in lines[3:]:
             segments.append(f"{header}\n{line}")
-        
-        
-        
+            
         # Loop through each segmented line and call the LLM
         for i, segment in enumerate(segments, start=1):
             user_prompt = f"""Analyze the sentiment of the respondent shown below. 
@@ -555,9 +555,9 @@ Return ONLY a JSON object. No markdown. No code fences.
 }}
 
 PRIORITY:
-- high:   issue blocks core learning outcomes
-- medium: affects perceived quality but does not block learning
-- low:    enhancement — useful but not urgent
+- high:   takes relatively low effort to implement compared to the impact when implement. The impact is widespread and is very significant in the context of the program.
+- medium: takes relatively equal effort to the impact when implemented. The impact is valuable but not as widespread and significant in the context of the program
+- low:    takes relatively high effort compared to the impact when implemented. The impact is isolated and not very significant in the context of the program.
 
 BREADTH:
 - isolated:   one cluster only
