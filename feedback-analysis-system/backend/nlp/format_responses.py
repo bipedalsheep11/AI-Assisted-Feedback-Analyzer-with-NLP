@@ -61,8 +61,6 @@ def generate_formatted_responses(
         header = "Respondent, " + ", ".join(text_cols)
 
         # Each data line: "row_number, answer1, answer2, ..."
-<<<<<<< HEAD
-<<<<<<< HEAD
         # We use the original DataFrame index so IDs are stable.
         #
         # WHY WE SANITIZE: survey responses sometimes contain embedded newlines
@@ -87,23 +85,14 @@ def generate_formatted_responses(
             )
 
         data_lines = "\n".join(
-            f"{idx + 1}, " + ", ".join(_sanitize(t) for t in text_row)
-=======
-        # We use the original DataFrame index so IDs are stable
-        data_lines = "\n".join(
-            f"{idx + 1}, " + ", ".join(str(t) for t in text_row)
->>>>>>> parent of 15a46eb (fixed issue with the respondent table not populating)
-=======
-        # We use the original DataFrame index so IDs are stable
-        data_lines = "\n".join(
-            f"{idx + 1}, " + ", ".join(str(t) for t in text_row)
->>>>>>> parent of 15a46eb (fixed issue with the respondent table not populating)
+            f"R{str(idx + 1).zfill(3)}, " + ", ".join(_sanitize(t) for t in text_row)
             for idx, text_row in zip(respondent_index, sample_responses)
         )
         formatted_responses = f"Cluster: {cluster_id}\n{'=' * 30}\n{header}\n{data_lines}"
     else:
         formatted_responses = f"Cluster: {cluster_id}\n{'=' * 30}\n(no text columns detected)"
-
+    print(f"Formatted_ratings:\n", "#"*30, formatted_ratings)
+    print(f"Formatted_responses:\n", "#"*30, formatted_responses)
     return [formatted_ratings, formatted_responses]
 
 
