@@ -149,130 +149,6 @@ def label_all_clusters(
 # 2. SENTIMENT ANALYSIS
 # ════════════════════════════════════════════════════════════════
 
-# def analyze_sentiment(
-#     all_clusters_responses: list[str],
-#     system_prompt:          str,
-# ) -> dict:
-#     """
-#     Classify sentiment for every respondent across all clusters.
-
-#     Parameters
-#     ----------
-#     all_clusters_responses : list[str] — [avg_ratings_block, responses_block]
-#     system_prompt          : str — LLM system prompt
-
-#     Returns
-#     -------
-#     dict with keys:
-#       total_classified, results (list of per-respondent dicts),
-#       cluster_summary (sentiment % per cluster)
-#     """
-#     # Split the text into a list of lines, ignoring any trailing empty lines
-#     lines = all_clusters_responses[1].strip().split('\n')
-    
-#     # If there's no data, return an empty template
-#     if not lines or len(lines) < 2:
-#         return {"total_classified": 0, "results": [], "cluster_summary": {}}
-
-#     # The first line is the header
-#     header = lines[0]
-    
-#     # List to hold our new segmented strings
-#     segments = []
-#     for line in lines[1:]:
-#         segments.append(f"{header}\n{line}")
-    
-#     all_results = []
-    
-#     # Loop through each segmented line and call the LLM
-#     for i, segment in enumerate(segments, start=1):
-#         user_prompt = f"""Analyze the sentiment of the respondent shown below. 
-        
-#         Respondent responses in CSV format (columns: Respondent Number, then question columns). Treat this as a Comma-Separated Value (CSV) file:
-#         {segment}
-        
-#         For this respondent, classify their sentiment and return a JSON object with this exact structure.
-#         Return ONLY the JSON. No markdown. No code fences.
-        
-#         {{
-#           "results": [
-#             {{
-#               "cluster": <cluster number as integer, use 0 if unknown>,
-#               "respondent_id": "<respondent number>",
-#               "sentiment": "<positive | negative | neutral | mixed>",
-#               "confidence": "<high | medium | low>",
-#               "flag_urgent": <true | false>,
-#               "flag_reason": "<one sentence if urgent, otherwise null>",
-#               "key_phrases": ["<3-6 word phrase>", "<3-6 word phrase>", "<3-6 word phrase>"]
-#             }}
-#           ]
-#         }}
-        
-#         SENTIMENT DEFINITIONS:
-#         - positive: satisfaction, appreciation, or benefit from training
-#         - negative: dissatisfaction, frustration, or significant problems
-#         - neutral:  factual observations without clear valence
-#         - mixed:    both positive and negative in the same response
-        
-#         FLAG URGENT if ANY of these apply:
-#         - Strong dissatisfaction that would damage programme credibility if repeated
-#         - Logistical failure that prevented meaningful participation
-#         - Safety, health, or welfare concern
-#         - Explicit refusal to recommend or return to this programme
-        
-#         KEY PHRASES: extract up to 3 short phrases (3-6 words each) capturing the core of the response."""
-        
-#         try:
-#             # Note: Ensure you have your JSON parsing and LLM calling functions imported
-#             raw = call_llm_with_retry(system_prompt, user_prompt, max_tokens=1000)
-#             parsed_raw = parse_llm_json(raw)
-            
-#             # Aggregate the result
-#             if parsed_raw and "results" in parsed_raw:
-#                 all_results.extend(parsed_raw["results"])
-                
-#         except Exception as e:
-#             print(f"Failed to classify row {i}: {e}")
-#             continue
-
-#     # ── Initialize final result structure
-#     result = {
-#         "total_classified": len(all_results),
-#         "results": all_results,
-#         "cluster_summary": {}
-#     }
-
-#     if not all_results:
-#         return result
-
-#     # ── Recompute cluster_summary from the compiled results list
-#     cluster_counts: dict[str, dict[str, int]] = {}
-#     for r in all_results:
-#         ckey = str(r.get("cluster", "0"))
-#         if ckey not in cluster_counts:
-#             cluster_counts[ckey] = {"positive": 0, "neutral": 0, "negative": 0, "mixed": 0}
-            
-#         sentiment = r.get("sentiment", "neutral").lower()
-#         if sentiment in cluster_counts[ckey]:
-#             cluster_counts[ckey][sentiment] += 1
-#         else:
-#             cluster_counts[ckey]["neutral"] += 1 # fallback
-
-#     # Convert raw counts to rounded percentages per cluster
-#     cluster_summary: dict[str, dict[str, int]] = {}
-#     for ckey, counts in cluster_counts.items():
-#         total_in_cluster = sum(counts.values())
-#         if total_in_cluster == 0:
-#             cluster_summary[ckey] = {"positive": 0, "neutral": 0, "negative": 0, "mixed": 0}
-#         else:
-#             cluster_summary[ckey] = {
-#                 sentiment: round((count / total_in_cluster) * 100)
-#                 for sentiment, count in counts.items()
-#             }
-
-#     result["cluster_summary"] = cluster_summary
-#     return result
-
 def analyze_sentiment(
     labeled_df: pd.DataFrame,
     best_k: int, 
@@ -371,8 +247,13 @@ def analyze_sentiment(
                 raw = call_llm_with_retry(system_prompt, user_prompt, max_tokens=1000)
                 parsed_raw = parse_llm_json(raw)
                 
-                # Aggregate the result
+                # Aggregate the result.
+                # Override the LLM's cluster guess with the authoritative value
+                # from the loop — the LLM receives no cluster column so it always
+                # defaults to 0, which breaks cluster_summary for every cluster > 0.
                 if parsed_raw and "results" in parsed_raw:
+                    for r in parsed_raw["results"]:
+                        r["cluster"] = cluster_id
                     all_results.extend(parsed_raw["results"])
                     
             except Exception as e:
@@ -416,6 +297,7 @@ def analyze_sentiment(
 
     result["cluster_summary"] = cluster_summary
     return result
+
 
 
 

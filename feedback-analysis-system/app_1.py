@@ -576,10 +576,30 @@ elif page == "Dashboard":
             pos_vals = [sent_summ.get(str(i), {}).get("positive", 0) for i in range(k)]
             neu_vals = [sent_summ.get(str(i), {}).get("neutral",  0) for i in range(k)]
             neg_vals = [sent_summ.get(str(i), {}).get("negative", 0) for i in range(k)]
+
+            # Compute raw participant counts per cluster per sentiment for hover labels.
+            # cluster_summary only stores percentages, so we derive counts from results.
+            count_map = {}
+            for r in (sent_data.get("results") or []):
+                ckey = str(r.get("cluster", "0"))
+                if ckey not in count_map:
+                    count_map[ckey] = {"positive": 0, "neutral": 0, "negative": 0, "mixed": 0}
+                s = r.get("sentiment", "neutral").lower()
+                count_map[ckey][s] = count_map[ckey].get(s, 0) + 1
+            pos_counts = [count_map.get(str(i), {}).get("positive", 0) for i in range(k)]
+            neu_counts = [count_map.get(str(i), {}).get("neutral",  0) for i in range(k)]
+            neg_counts = [count_map.get(str(i), {}).get("negative", 0) for i in range(k)]
+
             fig_sent = go.Figure(data=[
-                go.Bar(name="Positive", x=cl_names, y=pos_vals, marker_color=hex_to_rgba("#1a8a82", 0.8)),
-                go.Bar(name="Neutral",  x=cl_names, y=neu_vals, marker_color=hex_to_rgba("#8a8f9e", 0.4)),
-                go.Bar(name="Negative", x=cl_names, y=neg_vals, marker_color=hex_to_rgba("#c94f38", 0.8)),
+                go.Bar(name="Positive", x=cl_names, y=pos_vals, marker_color=hex_to_rgba("#1a8a82", 0.8),
+                       customdata=pos_counts,
+                       hovertemplate="%{x}<br>Positive: %{y}% (%{customdata} participants)<extra></extra>"),
+                go.Bar(name="Neutral",  x=cl_names, y=neu_vals, marker_color=hex_to_rgba("#8a8f9e", 0.4),
+                       customdata=neu_counts,
+                       hovertemplate="%{x}<br>Neutral: %{y}% (%{customdata} participants)<extra></extra>"),
+                go.Bar(name="Negative", x=cl_names, y=neg_vals, marker_color=hex_to_rgba("#c94f38", 0.8),
+                       customdata=neg_counts,
+                       hovertemplate="%{x}<br>Negative: %{y}% (%{customdata} participants)<extra></extra>"),
             ])
             fig_sent.update_layout(
                 barmode="stack", paper_bgcolor="#ffffff", plot_bgcolor="#f4f5f8",
