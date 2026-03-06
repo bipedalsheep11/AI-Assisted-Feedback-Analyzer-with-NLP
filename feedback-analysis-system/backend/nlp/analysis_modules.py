@@ -450,48 +450,34 @@ def cluster_themes(
     if predefined_themes:
         theme_list = "\n".join(f"- {t}" for t in predefined_themes)
         theme_instruction = f"""Assign each response to ONE of these predefined themes.
-If a response fits none, assign it to "Other" and note the actual theme it represents.
-
-PREDEFINED THEMES:
-{theme_list}"""
+        If a response fits none, assign it to "Other" and note the actual theme it represents.
+        
+        PREDEFINED THEMES:
+        {theme_list}"""
     else:
         theme_instruction = """Identify 4-8 recurring themes from the responses.
-Name each theme as a short noun phrase (e.g. "Facilitator Clarity", "Module Pacing").
-Do not create a unique theme per response — look for patterns across respondents."""
-
-    user_prompt = f"""You are performing thematic analysis on post-training evaluation responses.
-
-{theme_instruction}
-
-RESPONDENT RESPONSES:
-{all_clusters_responses[1]}
-
-Return ONLY a JSON object. No markdown. No code fences.
-
-{{
-  "themes": [
-    {{
-      "name": "Theme Name",
-      "count": <integer — number of responses assigned to this theme>,
-      "description": "One sentence characterising what respondents in this theme are saying",
-      "clusters": [<list of cluster IDs where this theme appears>]
-    }}
-  ],
-  "coded_responses": [
-    {{
-      "respondent_id": "<id>",
-      "cluster": <integer>,
-      "theme": "Theme Name",
-      "fit": "<strong | moderate | weak>",
-      "supporting_quote": "<5-10 word phrase from the response justifying the assignment>"
-    }}
-  ]
-}}
-
-THEME FIT DEFINITIONS:
-- strong:   response is almost entirely about this theme
-- moderate: theme is present but response also covers other topics
-- weak:     only tangential — flag for manual review"""
+        Name each theme as a short noun phrase (e.g. "Facilitator Clarity", "Module Pacing").
+        Do not create a unique theme per response — look for patterns across respondents."""
+        
+        user_prompt = f"""You are performing thematic analysis on post-training evaluation responses.
+        
+        {theme_instruction}
+        
+        RESPONDENT RESPONSES:
+        {all_clusters_responses[1]}
+        
+        Return ONLY a JSON object. No markdown. No code fences.
+        
+        {{
+          "themes": [
+            {{
+              "name": "Theme Name",
+              "count": <integer — number of responses assigned to this theme>,
+              "description": "One sentence characterising what respondents in this theme are saying",
+              "clusters": [<list of cluster IDs where this theme appears>]
+            }}
+          ]
+        }}"""
 
     raw    = call_llm_with_retry(system_prompt, user_prompt, max_tokens=2500)
     result = parse_llm_json(raw)
@@ -499,7 +485,6 @@ THEME FIT DEFINITIONS:
     if not result:
         return {
             "themes": [],
-            "coded_responses": [],
             "_parse_error": raw,
         }
     return result

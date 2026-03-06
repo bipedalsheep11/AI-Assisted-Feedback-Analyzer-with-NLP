@@ -28,7 +28,7 @@ current_backend: str = "none"
 def call_llm(
     system_prompt: str,
     user_prompt:   str,
-    max_tokens:    int   = 1500,
+    max_tokens:    int   = 10000,
     temperature:   float = 0.05,
 ) -> str:
     """
