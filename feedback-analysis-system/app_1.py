@@ -544,7 +544,9 @@ elif page == "Dashboard":
         with col_left:
             st.markdown("**Cluster Map** — PCA 2D projection")
             fig_scatter = go.Figure()
-            pca = st.session_state.pca_coords
+            pca         = st.session_state.pca_coords
+            annotations = []
+
             for ci in range(k):
                 mask = df["cluster"].values == ci
                 if pca is not None and len(pca) >= len(df):
@@ -554,19 +556,117 @@ elif page == "Dashboard":
                     center = [(-2.5 + ci * 1.8), (1.8 - ci * 1.2)]
                     xs = center[0] + np.random.randn(mask.sum()) * 0.8
                     ys = center[1] + np.random.randn(mask.sum()) * 0.8
-                cl = labels.get(str(ci), labels.get(ci, {}))
+
+                cl        = labels.get(str(ci), labels.get(ci, {}))
+                col_hex   = cluster_color(ci)
+                col_solid = hex_to_rgba(col_hex, 0.85)
+                col_fill  = hex_to_rgba(col_hex, 0.10)
+                col_edge  = hex_to_rgba(col_hex, 0.45)
+
+                # ── Covariance ellipse boundary ───────────────────
+                # Requires at least 2 distinct points to form a covariance matrix.
+                # The ellipse is drawn at 2 standard deviations, which encloses
+                # ~95% of points assuming a roughly normal spread per cluster.
+                if mask.sum() >= 2:
+                    pts = np.column_stack([xs, ys])  # shape (n, 2)
+
+                    # np.cov expects variables as rows, observations as columns,
+                    # so we transpose: shape becomes (2, n).
+                    cov = np.cov(pts.T)
+
+                    # eigh() returns eigenvalues + eigenvectors of a symmetric
+                    # matrix. Eigenvalues give the variance along each principal
+                    # axis of the ellipse; eigenvectors give those axes' directions.
+                    eigenvalues, eigenvectors = np.linalg.eigh(cov)
+
+                    # 60-point parametric circle that we will stretch and rotate.
+                    theta  = np.linspace(0, 2 * np.pi, 60)
+                    circle = np.array([np.cos(theta), np.sin(theta)])  # (2, 60)
+
+                    # Transform: rotate by eigenvectors, scale by sqrt(eigenvalues)
+                    # multiplied by 2 (= 2 std dev coverage). np.abs guards against
+                    # tiny negative eigenvalues from floating-point rounding.
+                    scale        = 2.0
+                    transform    = eigenvectors @ np.diag(np.sqrt(np.abs(eigenvalues))) * scale
+                    ellipse_pts  = transform @ circle  # (2, 60)
+
+                    cx, cy = float(np.mean(xs)), float(np.mean(ys))
+                    ell_x  = ellipse_pts[0] + cx
+                    ell_y  = ellipse_pts[1] + cy
+
+                    # fill="toself" closes the path and fills the enclosed area.
+                    # hoverinfo="skip" prevents the boundary from stealing hover
+                    # events away from the dots underneath it.
+                    fig_scatter.add_trace(go.Scatter(
+                        x=np.append(ell_x, ell_x[0]),  # close the loop
+                        y=np.append(ell_y, ell_y[0]),
+                        mode="lines",
+                        fill="toself",
+                        fillcolor=col_fill,
+                        line=dict(color=col_edge, width=1.5, dash="dot"),
+                        showlegend=False,
+                        hoverinfo="skip",
+                        name=f"C{ci} boundary",
+                    ))
+                else:
+                    # Single-point cluster: fall back to centroid only
+                    cx, cy = float(xs[0]), float(ys[0])
+
+                # Build respondent ID list matching the masked rows for hover labels
+                resp_ids = [f"R{str(i + 1).zfill(3)}" for i in df.index[mask]]
+
+                # ── Individual respondent dots ────────────────────
                 fig_scatter.add_trace(go.Scatter(
-                    x=xs, y=ys, mode="markers",
+                    x=xs, y=ys,
+                    mode="markers",
                     name=cl.get("label", f"C{ci}"),
-                    marker=dict(color=cluster_color(ci), size=8, opacity=0.8),
+                    marker=dict(color=col_solid, size=7, opacity=0.85,
+                                line=dict(color="#ffffff", width=1)),
+                    customdata=resp_ids,
+                    hovertemplate=(
+                        f"<b>Cluster {ci}: {cl.get('label', f'C{ci}')}</b><br>"
+                        "Respondent: %{customdata}<br>"
+                        "PC1: %{x:.3f} · PC2: %{y:.3f}"
+                        "<extra></extra>"
+                    ),
                 ))
+
+                # ── Centroid diamond ──────────────────────────────
+                cx, cy = float(np.mean(xs)), float(np.mean(ys))
+                fig_scatter.add_trace(go.Scatter(
+                    x=[cx], y=[cy],
+                    mode="markers",
+                    showlegend=False,
+                    marker=dict(symbol="diamond", color=col_solid, size=14,
+                                line=dict(color="#ffffff", width=2)),
+                    hovertemplate=(
+                        f"<b>Centroid — C{ci}: {cl.get('label', f'C{ci}')}</b><br>"
+                        "PC1: %{x:.3f} · PC2: %{y:.3f}"
+                        "<extra></extra>"
+                    ),
+                ))
+
+                # ── Cluster label annotation above centroid ───────
+                annotations.append(dict(
+                    x=cx, y=cy,
+                    text=f"<b>C{ci}</b>",
+                    showarrow=False,
+                    yshift=16,
+                    font=dict(family="DM Mono", size=9, color=col_hex),
+                    bgcolor="rgba(255,255,255,0.75)",
+                    borderpad=2,
+                ))
+
             fig_scatter.update_layout(
                 paper_bgcolor="#ffffff", plot_bgcolor="#f4f5f8",
                 font=dict(family="DM Mono", color="#4a5068", size=10),
-                legend=dict(font=dict(size=10), bgcolor="#ffffff", bordercolor="#d8dce8", borderwidth=1),
+                legend=dict(font=dict(size=10), bgcolor="#ffffff",
+                            bordercolor="#d8dce8", borderwidth=1),
+                annotations=annotations,
                 margin=dict(l=0, r=0, t=10, b=0),
-                height=280,
-                xaxis=dict(gridcolor="#d8dce8"), yaxis=dict(gridcolor="#d8dce8"),
+                height=300,
+                xaxis=dict(title="PC1", gridcolor="#d8dce8", zeroline=False),
+                yaxis=dict(title="PC2", gridcolor="#d8dce8", zeroline=False),
             )
             st.plotly_chart(fig_scatter, use_container_width=True)
 
@@ -576,30 +676,10 @@ elif page == "Dashboard":
             pos_vals = [sent_summ.get(str(i), {}).get("positive", 0) for i in range(k)]
             neu_vals = [sent_summ.get(str(i), {}).get("neutral",  0) for i in range(k)]
             neg_vals = [sent_summ.get(str(i), {}).get("negative", 0) for i in range(k)]
-
-            # Compute raw participant counts per cluster per sentiment for hover labels.
-            # cluster_summary only stores percentages, so we derive counts from results.
-            count_map = {}
-            for r in (sent_data.get("results") or []):
-                ckey = str(r.get("cluster", "0"))
-                if ckey not in count_map:
-                    count_map[ckey] = {"positive": 0, "neutral": 0, "negative": 0, "mixed": 0}
-                s = r.get("sentiment", "neutral").lower()
-                count_map[ckey][s] = count_map[ckey].get(s, 0) + 1
-            pos_counts = [count_map.get(str(i), {}).get("positive", 0) for i in range(k)]
-            neu_counts = [count_map.get(str(i), {}).get("neutral",  0) for i in range(k)]
-            neg_counts = [count_map.get(str(i), {}).get("negative", 0) for i in range(k)]
-
             fig_sent = go.Figure(data=[
-                go.Bar(name="Positive", x=cl_names, y=pos_vals, marker_color=hex_to_rgba("#1a8a82", 0.8),
-                       customdata=pos_counts,
-                       hovertemplate="%{x}<br>Positive: %{y}% (%{customdata} participants)<extra></extra>"),
-                go.Bar(name="Neutral",  x=cl_names, y=neu_vals, marker_color=hex_to_rgba("#8a8f9e", 0.4),
-                       customdata=neu_counts,
-                       hovertemplate="%{x}<br>Neutral: %{y}% (%{customdata} participants)<extra></extra>"),
-                go.Bar(name="Negative", x=cl_names, y=neg_vals, marker_color=hex_to_rgba("#c94f38", 0.8),
-                       customdata=neg_counts,
-                       hovertemplate="%{x}<br>Negative: %{y}% (%{customdata} participants)<extra></extra>"),
+                go.Bar(name="Positive", x=cl_names, y=pos_vals, marker_color=hex_to_rgba("#1a8a82", 0.8)),
+                go.Bar(name="Neutral",  x=cl_names, y=neu_vals, marker_color=hex_to_rgba("#8a8f9e", 0.4)),
+                go.Bar(name="Negative", x=cl_names, y=neg_vals, marker_color=hex_to_rgba("#c94f38", 0.8)),
             ])
             fig_sent.update_layout(
                 barmode="stack", paper_bgcolor="#ffffff", plot_bgcolor="#f4f5f8",
@@ -626,21 +706,74 @@ elif page == "Dashboard":
         if themes:
             try:
                 import plotly.graph_objects as go
+
+                # Sort descending so the most frequent theme appears at the top.
+                # Plotly horizontal bar charts render bottom-to-top by default,
+                # so we sort ascending here and let Plotly flip the visual order.
+                sorted_themes = sorted(themes, key=lambda t: t["count"])
+
+                theme_names  = [t["name"]  for t in sorted_themes]
+                theme_counts = [t["count"] for t in sorted_themes]
+                # Wrap description text at ~55 characters per line by inserting
+                # <br> tags at word boundaries. Plotly renders hover labels as HTML,
+                # so <br> is the only way to force line breaks inside a tooltip.
+                # 55 chars is narrow enough to fit comfortably inside the default
+                # hover box width without the text running off the screen edge.
+                def _wrap(text: str, width: int = 55) -> str:
+                    words, lines, current = text.split(), [], ""
+                    for word in words:
+                        # +1 accounts for the space between words
+                        if current and len(current) + 1 + len(word) > width:
+                            lines.append(current)
+                            current = word
+                        else:
+                            current = (current + " " + word).strip()
+                    if current:
+                        lines.append(current)
+                    return "<br>".join(lines)
+
+                theme_descs  = [_wrap(t.get("description", "")) for t in sorted_themes]
+
+                # Dynamic height: 42px per theme with a minimum of 260px
+                chart_height = max(260, len(sorted_themes) * 42)
+
+                # Assign a distinct colour to each theme by cycling through
+                # CLUSTER_COLORS. Using per-bar colours on a single Bar trace
+                # requires marker_color to be a list, one entry per bar.
+                theme_colors = [
+                    hex_to_rgba(CLUSTER_COLORS[i % len(CLUSTER_COLORS)], 0.72)
+                    for i in range(len(sorted_themes))
+                ]
+
                 fig_theme = go.Figure(go.Bar(
-                    x=[t["count"] for t in themes],
-                    y=[t["name"]  for t in themes],
+                    x=theme_counts,
+                    y=theme_names,
                     orientation="h",
-                    marker_color=[hex_to_rgba(CLUSTER_COLORS[i % len(CLUSTER_COLORS)], 0.6) for i in range(len(themes))],
+                    marker_color=theme_colors,
+                    # Text count label shown at the end of each bar
+                    text=theme_counts,
+                    textposition="outside",
+                    textfont=dict(family="DM Mono", size=10, color="#4a5068"),
+                    # Hover shows the theme description the LLM generated
+                    customdata=theme_descs,
+                    hovertemplate=(
+                        "<b>%{y}</b><br>"
+                        "Mentions: %{x}<br>"
+                        "%{customdata}"
+                        "<extra></extra>"
+                    ),
                 ))
                 fig_theme.update_layout(
                     paper_bgcolor="#ffffff", plot_bgcolor="#f4f5f8",
                     font=dict(family="DM Mono", color="#4a5068", size=10),
-                    margin=dict(l=0, r=0, t=10, b=0), height=260,
-                    xaxis=dict(gridcolor="#d8dce8"), yaxis=dict(gridcolor="rgba(0,0,0,0)"),
+                    margin=dict(l=0, r=40, t=10, b=0),
+                    height=chart_height,
+                    xaxis=dict(gridcolor="#d8dce8", title="Mentions"),
+                    yaxis=dict(gridcolor="rgba(0,0,0,0)", automargin=True),
                 )
                 st.plotly_chart(fig_theme, use_container_width=True)
             except ImportError:
-                for t in themes:
+                for t in sorted(themes, key=lambda t: t["count"], reverse=True):
                     st.write(f"**{t['name']}** — {t['count']} mentions")
         else:
             st.info("No themes available.")
